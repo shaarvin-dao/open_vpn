@@ -1,0 +1,82 @@
+#!/bin/bash
+
+yum install epel-release -y
+yum install openvpn easy-rsa -y
+
+cp /usr/share/doc/openvpn-*/sample/sample-config-files/server.conf /etc/openvpn
+
+sed -i 's/dh2048.pem/dh.pem/g' /etc/openvpn/server.conf
+
+sed -i 's/;push "redirect-gateway def1 bypass-dhcp"/push "redirect-gateway def1 bypass-dhcp"/g' /etc/openvpn/server.conf
+
+sed -i 's/;user nobody/user nobody/g' /etc/openvpn/server.conf
+
+sed -i 's/;group nobody/group nobody/g' /etc/openvpn/server.conf
+
+sed -i 's/;push "dhcp-option DNS 208.67.222.222"/push "dhcp-option DNS 8.8.8.8"/g' /etc/openvpn/server.conf
+
+sed -i 's/;push "dhcp-option DNS 208.67.220.220"/push "dhcp-option DNS 8.8.8.8"/g' /etc/openvpn/server.conf
+
+sed -i 's/;comp-lzo/comp-lzo/g' /etc/openvpn/server.conf
+
+mkdir /etc/openvpn/easy-rsa
+
+cp -rf /usr/share/easy-rsa/3.0/* /etc/openvpn/easy-rsa
+
+STR='export KEY_COUNTRY="US"\nexport KEY_PROVINCE="NY"\nexport KEY_CITY="New York"\nexport KEY_ORG="DigitalOcean"\nexport KEY_EMAIL="sammy@example.com"\nexport KEY_OU="Community"\nexport KEY_NAME="server"\nexport KEY_CN="openvpn.example.com"'
+
+echo -e $STR >> /etc/openvpn/easy-rsa/vars
+
+cd /etc/openvpn/easy-rsa
+
+./easyrsa init-pki -y
+
+./easyrsa clean-all -y
+
+./easyrsa build-ca nopass
+
+./easyrsa build-server-full server nopass
+
+./easyrsa build-client-full client nopass
+
+./easyrsa gen-dh
+
+cd /etc/openvpn/easy-rsa/pki
+
+cp dh.pem ca.crt /etc/openvpn
+
+cd /etc/openvpn/easy-rsa/pki/private
+
+cp server.key /etc/openvpn
+
+cd /etc/openvpn/easy-rsa/pki/issued
+
+cp server.crt /etc/openvpn
+
+yum install iptables-services -y
+
+systemctl mask firewalld
+
+systemctl enable iptables
+
+systemctl stop firewalld
+
+systemctl start iptables
+
+iptables --flush
+
+iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -o eth0 -j MASQUERADE
+
+iptables-save > /etc/sysconfig/iptables
+
+STR2="net.ipv4.ip_forward = 1"
+
+echo -e $STR >> /etc/sysctl.conf
+
+systemctl restart network.service
+
+systemctl -f enable openvpn@server.service
+
+systemctl start openvpn@server.service
+
+systemctl status openvpn@server.service
